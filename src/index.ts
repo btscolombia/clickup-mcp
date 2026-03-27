@@ -13,6 +13,7 @@ import { registerSpaceTools } from "./tools/space-tools";
 import { registerListToolsRead, registerListToolsWrite } from "./tools/list-tools";
 import { registerTimeToolsRead, registerTimeToolsWrite } from "./tools/time-tools";
 import { registerDocumentToolsRead, registerDocumentToolsWrite } from "./tools/doc-tools";
+import { registerMemberTools } from "./tools/member-tools";
 import { registerSpaceResources } from "./resources/space-resources";
 
 // Create server variable that will be initialized later
@@ -97,6 +98,9 @@ Use the ClickUp search tools to find tasks assigned to me, and get detailed info
       return { messages };
     }
   );
+
+  // Register member tools for all modes (read-only, useful for all)
+  registerMemberTools(server);
 
   if (CONFIG.mode === 'read-minimal') {
     // Core task context tools for AI coding assistance
