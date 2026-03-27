@@ -1,26 +1,20 @@
 FROM node:20-alpine
 
-# Directorio de trabajo
+# Instalar dependencias globales
+RUN npm install -g supergateway@2
+
 WORKDIR /app
 
-# Copiar archivos del proyecto
-COPY package*.json ./
-COPY src ./src
-COPY tsconfig.json ./
+# Instalar clickup-mcp localmente
+RUN npm init -y && npm install @hauptsache.net/clickup-mcp
 
-# Instalar dependencias y compilar
-RUN npm ci && npm run build
-
-# Instalar supergateway para HTTP transport
-RUN npm install -g supergateway@3
-
-# Variables de entorno obligatorias
-ENV CLICKUP_API_KEY=placeholder
-ENV CLICKUP_TEAM_ID=placeholder
-ENV CLICKUP_MCP_MODE=write
+# Variables de entorno (configurar en Dockploy)
+ENV CLICKUP_API_KEY=""
+ENV CLICKUP_TEAM_ID=""
+ENV CLICKUP_MCP_MODE="write"
 ENV PORT=3231
 
 EXPOSE 3231
 
-# Ejecutar supergateway (STDIO → HTTP SSE)
-CMD ["supergateway", "--sse", "--port", "3231", "--stdio", "node", "dist/index.js"]
+# supergateway convierte STDIO → HTTP SSE
+CMD ["npx", "supergateway", "--sse", "--port", "3231", "--host", "0.0.0.0", "--stdio", "node", "node_modules/@hauptsache.net/clickup-mcp/dist/index.js"]
