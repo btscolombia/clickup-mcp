@@ -17,4 +17,4 @@ ENV PORT=3231
 EXPOSE 3231
 
 # supergateway convierte STDIO → HTTP SSE
-CMD ["npx", "supergateway", "--sse", "--port", "3231", "--host", "0.0.0.0", "--stdio", "node", "node_modules/@hauptsache.net/clickup-mcp/dist/index.js"]
+CMD ["npx", "supergateway", "--sse", "--port", "3231", "--baseUrl", "http://0.0.0.0:3231", "--stdio", "node", "node_modules/@hauptsache.net/clickup-mcp/dist/index.js"]
