@@ -185,4 +185,89 @@ export function registerSearchTools(server: McpServer, userData: any) {
       };
     }
   );
+
+  // New tool: searchLists - Find lists by name across ALL spaces and folders
+  server.tool(
+    "searchLists",
+    [
+      "Search for lists (boards) by name across ALL spaces and folders in the workspace.",
+      "This tool finds lists even if they are nested inside folders, unlike searchSpaces which only searches at the space level.",
+      "Use this tool when:",
+      "- User mentions a list name like 'NISA', 'Dental Studio', 'Social Media'",
+      "- You need to find a list to create tasks in",
+      "- User asks 'where is the X list?'",
+      "",
+      "Returns: list ID, name, folder (if any), space, and direct URL.",
+      "Always use the list ID returned here for createTask operations."
+    ].join("\n"),
+    {
+      query: z.string().describe("The name or partial name of the list to search for. Examples: 'NISA', 'Dental', 'Social'"),
+      limit: z.number().optional().describe("Maximum number of results to return (default: 5)"),
+    },
+    {
+      readOnlyHint: true,
+    },
+    async ({ query, limit = 5 }) => {
+      try {
+        const { getComprehensiveListIndex } = await import("../shared/utils");
+        const searchIndex = await getComprehensiveListIndex();
+        
+        if (!searchIndex) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Error: Could not build list search index. Please try again.",
+              },
+            ],
+          };
+        }
+        
+        const results = searchIndex.search(query);
+        
+        if (results.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No lists found matching "${query}". Try a different search term or check if the list exists in ClickUp.`,
+              },
+            ],
+          };
+        }
+        
+        // Format results
+        const formattedResults = results.slice(0, limit).map((r: any) => {
+          const item = r.item;
+          const lines = [
+            `📝 ${item.name}`,
+            `   ID: ${item.id}`,
+            item.folder_name ? `   Folder: ${item.folder_name}` : null,
+            `   Space: ${item.space_name}`,
+            `   URL: https://app.clickup.com/t/${item.id}`,
+          ].filter(Boolean);
+          return lines.join('\n');
+        });
+        
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Found ${results.length} list(s) matching "${query}":\n\n${formattedResults.join('\n\n')}`,
+            },
+          ],
+        };
+      } catch (error) {
+        console.error('Error searching lists:', error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error searching lists: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+        };
+      }
+    }
+  );
 }

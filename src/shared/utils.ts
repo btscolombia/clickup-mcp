@@ -585,3 +585,108 @@ export async function performMultiTermSearch<T>(
     .sort((a, b) => a.score - b.score)
     .map(entry => entry.item);
 }
+
+// Cache for comprehensive list index (includes all lists across all spaces/folders)
+let comprehensiveListIndexPromise: Promise<Fuse<any> | null> | null = null;
+
+/**
+ * Get a comprehensive search index that includes ALL lists across ALL spaces and folders
+ * This makes it possible to find lists like "NISA" even if they're nested in folders
+ */
+export async function getComprehensiveListIndex(): Promise<Fuse<any> | null> {
+  // Return cached promise if available
+  if (comprehensiveListIndexPromise) {
+    return comprehensiveListIndexPromise;
+  }
+
+  const fetchPromise = (async (): Promise<Fuse<any> | null> => {
+    try {
+      console.error('[ListIndex] Building comprehensive list index...');
+      
+      // Get all spaces first
+      const spacesResponse = await fetch(`https://api.clickup.com/api/v2/team/${CONFIG.teamId}/space`, {
+        headers: { Authorization: CONFIG.apiKey },
+      });
+      
+      if (!spacesResponse.ok) {
+        throw new Error(`Error fetching spaces: ${spacesResponse.status}`);
+      }
+      
+      const spacesData = await spacesResponse.json();
+      const spaces = spacesData.spaces || [];
+      
+      // Collect all lists from all spaces and folders
+      const allLists: any[] = [];
+      
+      // For each space, get its content (including folders and their lists)
+      for (const space of spaces) {
+        if (space.archived) continue;
+        
+        try {
+          const { lists, folders } = await getSpaceContent(space.id);
+          
+          // Add direct lists with space context
+          for (const list of lists) {
+            allLists.push({
+              ...list,
+              type: 'list',
+              space_name: space.name,
+              space_id: space.id,
+              folder_name: null,
+              folder_id: null,
+              display_name: `${list.name} (${space.name})`,
+            });
+          }
+          
+          // Add lists within folders with folder context
+          for (const folder of folders) {
+            if (folder.archived) continue;
+            
+            for (const list of folder.lists || []) {
+              allLists.push({
+                ...list,
+                type: 'list',
+                space_name: space.name,
+                space_id: space.id,
+                folder_name: folder.name,
+                folder_id: folder.id,
+                display_name: `${list.name} (${folder.name} > ${space.name})`,
+              });
+            }
+          }
+        } catch (error) {
+          console.error(`Error fetching content for space ${space.id}:`, error);
+        }
+      }
+      
+      console.error(`[ListIndex] Built index with ${allLists.length} lists`);
+      
+      // Create Fuse search index
+      return new Fuse(allLists, {
+        keys: [
+          { name: 'name', weight: 0.7 },
+          { name: 'id', weight: 0.6 },
+          { name: 'folder_name', weight: 0.3 },
+          { name: 'space_name', weight: 0.2 }
+        ],
+        includeScore: true,
+        threshold: 0.4,
+        minMatchCharLength: 1,
+      });
+    } catch (error) {
+      console.error('[ListIndex] Error building comprehensive list index:', error);
+      return null;
+    }
+  })();
+
+  // Cache the promise
+  comprehensiveListIndexPromise = fetchPromise;
+
+  // Auto-cleanup after 60 seconds
+  setTimeout(() => {
+    comprehensiveListIndexPromise = null;
+    console.error('[ListIndex] Auto-cleaned comprehensive list index');
+  }, GLOBAL_REFRESH_INTERVAL);
+
+  return fetchPromise;
+}

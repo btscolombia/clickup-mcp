@@ -3,6 +3,36 @@ import { z } from "zod";
 import { CONFIG } from "../shared/config";
 import { generateListUrl, generateSpaceUrl } from "../shared/utils";
 
+// Cache for list statuses with TTL
+const listStatusCache = new Map<string, { data: any; timestamp: number }>();
+const LIST_CACHE_TTL = 300000; // 5 minutes
+
+/**
+ * Get cached list info or fetch fresh
+ */
+async function getCachedListInfo(listId: string): Promise<any> {
+  const cached = listStatusCache.get(listId);
+  const now = Date.now();
+  
+  if (cached && (now - cached.timestamp) < LIST_CACHE_TTL) {
+    console.error(`[ListCache] Using cached info for list ${listId}`);
+    return cached.data;
+  }
+  
+  console.error(`[ListCache] Fetching fresh info for list ${listId}`);
+  const response = await fetch(`https://api.clickup.com/api/v2/list/${listId}?include_markdown_description=true`, {
+    headers: { Authorization: CONFIG.apiKey },
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Error fetching list details: ${response.status} ${response.statusText}`);
+  }
+  
+  const data = await response.json();
+  listStatusCache.set(listId, { data, timestamp: now });
+  return data;
+}
+
 export function registerListToolsRead(server: McpServer) {
   server.tool(
     "getListInfo",
@@ -21,16 +51,8 @@ export function registerListToolsRead(server: McpServer) {
     },
     async ({ list_id }) => {
       try {
-        // Get list details including statuses (try to get markdown content)
-        const listResponse = await fetch(`https://api.clickup.com/api/v2/list/${list_id}?include_markdown_description=true`, {
-          headers: { Authorization: CONFIG.apiKey },
-        });
-
-        if (!listResponse.ok) {
-          throw new Error(`Error fetching list details: ${listResponse.status} ${listResponse.statusText}`);
-        }
-
-        const listData = await listResponse.json();
+        // Get list details with caching
+        const listData = await getCachedListInfo(list_id);
 
         // Fetch space tags in parallel (don't let this fail the main request)
         let spaceTags: any[] = [];
@@ -141,16 +163,8 @@ export function registerListToolsWrite(server: McpServer) {
     },
     async ({ list_id, append_description }) => {
       try {
-        // Get current list info including description (try to get markdown content)
-        const listResponse = await fetch(`https://api.clickup.com/api/v2/list/${list_id}?include_markdown_description=true`, {
-          headers: { Authorization: CONFIG.apiKey },
-        });
-
-        if (!listResponse.ok) {
-          throw new Error(`Error fetching list: ${listResponse.status} ${listResponse.statusText}`);
-        }
-
-        const listData = await listResponse.json();
+        // Get current list info with caching
+        const listData = await getCachedListInfo(list_id);
 
         // Handle append-only description update with markdown support
         const currentDescription = listData.markdown_description || listData.markdown_content || listData.content || "";
